@@ -64,7 +64,6 @@ VARIANT_DEFCONFIG := $(TARGET_KERNEL_VARIANT_CONFIG)
 SELINUX_DEFCONFIG := $(TARGET_KERNEL_SELINUX_CONFIG)
 
 ## Internal variables
-DTBS_OUT := $(PRODUCT_OUT)/dtbs
 KERNEL_OUT := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
 KERNEL_CONFIG := $(KERNEL_OUT)/.config
 KERNEL_RELEASE := $(KERNEL_OUT)/include/config/kernel.release
@@ -211,18 +210,6 @@ define make-kernel-target
 $(call internal-make-kernel-target,$(KERNEL_OUT),$(1))
 endef
 
-# Make a DTBO target
-# $(1): The DTBO target to build (eg. dtbo.img, defconfig)
-define make-dtbo-target
-$(call internal-make-kernel-target,$(PRODUCT_OUT)/dtbo,$(1))
-endef
-
-# Make a DTB targets
-# $(1): The DTB target to build (eg. dtbs, defconfig)
-define make-dtb-target
-$(call internal-make-kernel-target,$(DTBS_OUT),$(1))
-endef
-
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
 
@@ -278,13 +265,24 @@ alldefconfig: $(KERNEL_OUT)
 	env KCONFIG_NOTIMESTAMP=true \
 		 $(call make-kernel-target,alldefconfig)
 
-ifeq ($(TARGET_NEEDS_DTBOIMAGE),true)
-$(BOARD_PREBUILT_DTBOIMAGE):
-	echo -e ${CL_GRN}"Building DTBO.img"${CL_RST}
-	$(call make-dtbo-target,$(KERNEL_DEFCONFIG))
-	$(call make-dtbo-target,dtbo.img)
-endif # TARGET_NEEDS_DTBOIMAGE
 
+TARGET_PREBUILT_DTBO = $(PRODUCT_OUT)/dtbo/arch/$(KERNEL_ARCH)/boot/dtbo.img
+ifeq ($(BOARD_AVB_ENABLE),true)
+$(TARGET_PREBUILT_DTBO): $(AVBTOOL)
+	echo -e ${CL_GRN}"Building DTBO.img"${CL_RST}
+	$(PATH_OVERRIDE) $(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(PRODUCT_OUT)/dtbo ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) $(KERNEL_CLANG_TRIPLE) $(KERNEL_CC) $(KERNEL_DEFCONFIG)
+	$(PATH_OVERRIDE) $(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(PRODUCT_OUT)/dtbo ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) $(KERNEL_CLANG_TRIPLE) $(KERNEL_CC) dtbo.img
+	$(AVBTOOL) add_hash_footer \
+		--image $@ \
+		--partition_size $(BOARD_DTBOIMG_PARTITION_SIZE) \
+		--partition_name dtbo $(INTERNAL_AVB_DTBO_SIGNING_ARGS) \
+		$(BOARD_AVB_DTBO_ADD_HASH_FOOTER_ARGS)
+else
+$(TARGET_PREBUILT_DTBO):
+	echo -e ${CL_GRN}"Building DTBO.img"${CL_RST}
+	$(PATH_OVERRIDE) $(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(PRODUCT_OUT)/dtbo ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) $(KERNEL_CLANG_TRIPLE) $(KERNEL_CC) $(KERNEL_DEFCONFIG)
+	$(PATH_OVERRIDE) $(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(PRODUCT_OUT)/dtbo ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) $(KERNEL_CLANG_TRIPLE) $(KERNEL_CC) dtbo.img
+endif #BOARD_AVB_ENABLE
 endif # FULL_KERNEL_BUILD
 
 ## Install it
@@ -298,23 +296,31 @@ $(file) : $(KERNEL_BIN) | $(ACP)
 ALL_PREBUILT += $(INSTALLED_KERNEL_TARGET)
 endif
 
-INSTALLED_DTBOIMAGE_TARGET := $(PRODUCT_OUT)/dtbo.img
+ifeq ($(TARGET_NEEDS_DTBOIMAGE),true)
+file := $(INSTALLED_DTBOIMAGE_TARGET)
+ALL_PREBUILT += $(file)
+$(file) : $(TARGET_PREBUILT_DTBO) | $(ACP)
+	$(transform-prebuilt-to-target)
+
 ALL_PREBUILT += $(INSTALLED_DTBOIMAGE_TARGET)
+endif
+
+ifeq ($(BOARD_INCLUDE_DTB_IN_BOOTIMG),true)
+ifeq ($(BOARD_PREBUILT_DTBIMAGE_DIR),)
+$(INSTALLED_DTBIMAGE_TARGET): $(INSTALLED_KERNEL_TARGET)
+	cat $(KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/dts/qcom/*.dtb > $@
+endif # BOARD_PREBUILT_DTBIMAGE_DIR
+endif # BOARD_INCLUDE_DTB_IN_BOOTIMG
+INSTALLED_DTBIMAGE_TARGET := $(PRODUCT_OUT)/dtb.img
+ALL_PREBUILT += $(INSTALLED_DTBIMAGE_TARGET)
 
 .PHONY: kernel
 kernel: $(INSTALLED_KERNEL_TARGET)
 
-.PHONY: dtboimage
-dtboimage: $(INSTALLED_DTBOIMAGE_TARGET)
+.PHONY: dtbo
+dtbo: $(INSTALLED_DTBOIMAGE_TARGET)
 
-ifeq ($(BOARD_INCLUDE_DTB_IN_BOOTIMG),true)
-$(INSTALLED_DTBIMAGE_TARGET):
-	echo -e ${CL_GRN}"Building DTBs"${CL_RST}
-	$(call make-dtb-target,$(KERNEL_DEFCONFIG))
-	$(call make-dtb-target,dtbs)
-	cat $(shell find $(DTBS_OUT)/arch/$(KERNEL_ARCH)/boot/dts/** -type f -name "*.dtb" | sort) > $@
 .PHONY: dtbimage
 dtbimage: $(INSTALLED_DTBIMAGE_TARGET)
-endif # BOARD_INCLUDE_DTB_IN_BOOTIMG
 
 endif # TARGET_NO_KERNEL
