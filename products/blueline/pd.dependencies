@@ -1,3 +1,26 @@
 [
-
+    {
+        "target_path":  "device/google/crosshatch",
+        "repository":   "android_device_google_crosshatch",
+        "remote":       "pdx",
+        "revision":     "ten"
+    },
+    {
+        "target_path":  "device/google/crosshatch-sepolicy",
+        "repository":   "android_device_google_crosshatch-sepolicy",
+        "remote":       "pdx",
+        "revision":     "ten"
+    },
+    {
+        "target_path":  "kernel/google/bluecross",
+        "repository":   "DirtyUnicorns/android_kernel_google_bluecross",
+        "remote":       "github",
+        "revision":     "q10x"
+    },
+    {
+        "target_path":  "vendor/images",
+        "repository":   "DirtyUnicorns/android_vendor_images",
+        "remote":       "gitlab",
+        "revision":     "q10x"
+    }
 ]
